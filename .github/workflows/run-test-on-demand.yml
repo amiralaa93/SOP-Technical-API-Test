@@ -1,0 +1,67 @@
+name: SOP Technical API Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    name: Run Karate API Tests
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+  
+      - name: Run Karate tests with Maven
+        run: mvn clean test
+
+      - name: Upload HTML test report
+        uses: actions/upload-artifact@v4
+        if: ${{ always() && !cancelled() }}
+        with:
+          name: karate-reports-${{ github.run_id }}
+          path: |
+            target/surefire-reports/*
+            target/karate-reports/*
+          retention-days: 30
+          
+      - name: Set report URL
+        if: always()
+        run: |
+          echo "REPORT_URL=https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> $GITHUB_ENV
+    
+      - name: Send Email Notification on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v5
+        with:
+          server_address: ${{ secrets.SMTP_SERVER }}
+          server_port: ${{ secrets.SMTP_PORT }}
+          username: ${{ secrets.EMAIL_USERNAME }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: 🚨 Karate API Tests Failed for ${{ github.repository }}
+          to: ${{ secrets.EMAIL_USERNAME }}
+          from: ${{ secrets.EMAIL_USERNAME }}
+          attachments: target/karate-reports/karate-summary.html
+          html_body: |
+            <html>
+              <body>
+                <h2>🚨 The automated Karate API tests did not pass.</h2>
+                <p>Dear Team,</p>
+                <p>The Karate test suite has failed in the latest workflow run.</p>
+                <p>Branch: ${{ github.ref }}</p>
+                <p>Commit: ${{ github.sha }}</p>
+                <p>See full report here:
+                  <a href="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}">Test Report</a>
+                </p>
+              </body>
+            </html>
